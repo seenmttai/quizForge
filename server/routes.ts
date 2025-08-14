@@ -50,6 +50,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/activities/recent', isAuthenticated, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const logs = await storage.getActivityLogs(limit);
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching recent activities:", error);
+      res.status(500).json({ message: "Failed to fetch recent activities" });
+    }
+  });
+
   // Students management
   app.get('/api/students', isAuthenticated, async (req, res) => {
     try {
@@ -123,21 +134,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "generating",
       });
 
-      // Get relevant templates
-      const allTemplates = await storage.getQuestionTemplates();
-      const relevantTemplates = allTemplates.filter(t => 
-        t.subject.toLowerCase() === requestData.subject.toLowerCase() &&
-        t.topic.toLowerCase().includes(requestData.topic.toLowerCase())
-      );
-
-      if (relevantTemplates.length === 0) {
-        res.status(400).json({ message: "No templates found for the specified subject and topic" });
-        return;
+      // Parse variable ranges if provided
+      let variableRanges = {};
+      if (requestData.variableRanges) {
+        try {
+          // Parse ranges like "resistance: 100-500, voltage: 5-12"
+          const ranges = requestData.variableRanges.split(',').map(r => r.trim());
+          for (const range of ranges) {
+            const [name, values] = range.split(':').map(s => s.trim());
+            const [min, max] = values.split('-').map(v => parseFloat(v.trim()));
+            variableRanges[name] = { min, max };
+          }
+        } catch (e) {
+          // If parsing fails, use empty ranges
+          variableRanges = {};
+        }
       }
 
-      // Generate questions
+      // Create a template from the user input
+      const template = {
+        id: "user-template",
+        subject: requestData.subject,
+        topic: requestData.topic,
+        template: requestData.templateText,
+        variables: variableRanges,
+        difficultyRange: { min: 6.0, max: 8.0 }, // Default difficulty range
+        questionType: requestData.questionType,
+        createdAt: new Date(),
+      };
+
+      // Use AI to generate multiple unique questions
       const generatedQuestions = await generateMultipleQuestions(
-        relevantTemplates,
+        [template],
         requestData.questionCount
       );
 
@@ -145,22 +173,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const savedQuestions = [];
       for (const genQ of generatedQuestions) {
         const question = await storage.createQuestion({
-          templateId: relevantTemplates[0].id, // Use first template for now
+          templateId: null, // No template ID for user-generated questions
           questionText: genQ.questionText,
           expectedAnswer: genQ.expectedAnswer,
           difficulty: genQ.difficulty.toString(),
           subject: requestData.subject,
           topic: requestData.topic,
-          questionType: requestData.questionTypes[0] || "calculation",
+          questionType: requestData.questionType,
           variables: genQ.variables,
         });
         savedQuestions.push(question);
       }
 
+      // Assign to selected students if any
+      if (requestData.selectedStudents && requestData.selectedStudents.length > 0) {
+        for (let i = 0; i < requestData.selectedStudents.length && i < savedQuestions.length; i++) {
+          const studentId = requestData.selectedStudents[i];
+          const question = savedQuestions[i];
+          await storage.createAssignment({
+            studentId,
+            questionId: question.id,
+            status: "pending",
+          });
+        }
+      }
+
       // Update batch status
       await storage.updateQuestionBatch(batch.id, {
         status: "completed",
-        completedAt: new Date(),
       });
 
       // Log activity
@@ -187,7 +227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(400).json({ message: "Invalid request data", errors: error.errors });
       } else {
         console.error("Error generating questions:", error);
-        res.status(500).json({ message: "Failed to generate questions" });
+        res.status(500).json({ message: "Failed to generate questions", error: error.message });
       }
     }
   });
@@ -242,6 +282,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error creating assignment:", error);
         res.status(500).json({ message: "Failed to create assignment" });
       }
+    }
+  });
+
+  app.get('/api/assignments/recent', isAuthenticated, async (req, res) => {
+    try {
+      const assignments = await storage.getAssignments();
+      
+      // Get recent assignments (last 10)
+      const recentAssignments = assignments
+        .sort((a, b) => (b.assignedAt ? b.assignedAt.getTime() : 0) - (a.assignedAt ? a.assignedAt.getTime() : 0))
+        .slice(0, 10);
+      
+      // Enrich with student data
+      const enrichedAssignments = await Promise.all(
+        recentAssignments.map(async (assignment) => {
+          const student = await storage.getStudent(assignment.studentId);
+          return {
+            ...assignment,
+            student,
+          };
+        })
+      );
+      
+      res.json(enrichedAssignments);
+    } catch (error) {
+      console.error("Error fetching recent assignments:", error);
+      res.status(500).json({ message: "Failed to fetch recent assignments" });
     }
   });
 

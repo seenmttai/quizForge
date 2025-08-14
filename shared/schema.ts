@@ -142,9 +142,12 @@ export const insertQuestionBatchSchema = createInsertSchema(questionBatches).omi
 export const questionGeneratorRequestSchema = z.object({
   subject: z.string().min(1),
   topic: z.string().min(1),
-  difficultyLevel: z.enum(["beginner", "intermediate", "advanced", "expert"]),
-  questionCount: z.number().min(1).max(100),
-  questionTypes: z.array(z.string()).min(1),
+  difficultyLevel: z.enum(["easy", "medium", "hard"]),
+  questionCount: z.number().min(1).max(50),
+  questionType: z.string().min(1),
+  templateText: z.string().min(10),
+  variableRanges: z.string().optional(),
+  selectedStudents: z.array(z.string()).optional(),
 });
 
 // Types
