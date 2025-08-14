@@ -1,0 +1,118 @@
+🔹 Problem Restatement
+
+In conduction lab experiments, all students often receive the same question → leads to copying, unfair evaluation, and lack of engagement.
+
+Goal: Build an AI-powered system that generates unique but equivalent lab questions for each student.
+
+Requirements:
+
+No two students get the exact same question.
+
+All questions must be of equal difficulty.
+
+Evaluation and marking should remain unbiased.
+
+🔹 Step 1: Define the Question Space
+
+Before AI comes in, you need a structured template of lab questions. For conduction labs, typical question formats could be:
+
+“Find the thermal conductivity of a copper rod of length L and diameter D at a temperature difference ΔT.”
+
+“Calculate the heat transfer rate through a rod of material M with given dimensions and boundary conditions.”
+
+👉 Here, parameters (L, D, ΔT, M, etc.) can be varied without changing the conceptual difficulty.
+
+So, the first step is to define:
+
+Core concepts (what skill is being tested—Fourier’s law, thermal resistance, steady/unsteady conduction, etc.)
+
+Variable ranges (length, material, diameter, boundary conditions, etc.)
+
+Constraints (keep values realistic, keep question difficulty consistent).
+
+🔹 Step 2: AI Model for Question Generation
+
+You don’t want random variations—you want controlled variations.
+You can design a two-layer AI approach:
+
+Template-based Variations (Rule-based + AI)
+
+Start with human-designed templates for questions.
+
+Use AI (like GPT fine-tuned on conduction problems) to substitute values/materials while keeping the same difficulty level.
+
+Example: Replace "Copper, L=20 cm, D=1 cm" with "Aluminum, L=25 cm, D=0.9 cm" but ensure difficulty remains constant.
+
+Paraphrasing for Uniqueness
+
+Use a language model (LLM) to reword the question so even if two students get the same numbers, the phrasing differs.
+
+Example:
+
+Student A → "Determine the thermal conductivity of an aluminum rod, 25 cm in length and 9 mm in diameter…"
+
+Student B → "Find k for an Al rod with L = 0.25 m and D = 0.009 m, given a ΔT of 30°C…"
+
+🔹 Step 3: Difficulty Calibration
+
+How to ensure fairness:
+
+Tag each question with difficulty level based on:
+
+Type of formula used (1D conduction vs radial conduction).
+
+Number of steps required.
+
+Complexity of boundary conditions.
+
+Use AI + rules to only generate variations within the same difficulty bracket.
+
+🔹 Step 4: Unbiased Evaluation
+
+Even with unique questions, you need fair grading. Two approaches:
+
+Numerical Answer Equivalence
+
+Each generated question has a unique expected solution (thermal conductivity, heat transfer rate, etc.).
+
+The system evaluates based on numerical correctness → avoids bias.
+
+Stepwise AI Evaluation (Optional Advanced)
+
+Use an AI grader to check intermediate steps, not just the final answer.
+
+Helps identify if a student’s approach is correct even if calculation mistakes exist.
+
+🔹 Step 5: System Architecture
+
+Here’s how you could implement it:
+
+Input: Student ID (ensures uniqueness).
+
+Question Generator Module:
+
+Template-based + AI for controlled variations.
+
+Uses seed randomness (student ID) to ensure unique assignment.
+
+Difficulty Controller: Checks each generated question’s complexity.
+
+Paraphraser (LLM): Makes sure the wording is different.
+
+Answer Key Generator: Auto-generates the correct solution.
+
+Evaluation Engine: Compares student’s answer to expected solution.
+
+🔹 Step 6: Tools & Technologies
+
+Backend: Python, Django/Flask
+
+AI models:
+
+GPT / LLaMA / Mistral for natural language variation.
+
+SymPy/Numpy/Scipy for auto-solving conduction problems.
+
+Database: Store templates, generated questions, and student responses.
+
+UI: Web portal where students log in and see their unique question.
