@@ -1,62 +1,72 @@
-import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
+import { neon } from '@neondatabase/serverless';
+import passport from 'passport';
+import { router } from './routes.js';
+import { openaiClient } from './openai.js';
+import { configureReplitAuth } from './replitAuth.js';
+import { drizzle } from 'drizzle-orm/neon-http';
+import * as schema from '@shared/schema';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isProduction = process.env.NODE_ENV === 'production';
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+const port = process.env.PORT || 5000;
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+// Database connection
+const sql = neon(process.env.DATABASE_URL!);
+const db = drizzle(sql, { schema });
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
+// Session storage
+const PgSession = connectPgSimple(session);
+const sessionMiddleware = session({
+  store: new PgSession({
+    conString: process.env.DATABASE_URL,
+    tableName: 'user_sessions',
+  }),
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: isProduction,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  },
 });
 
-(async () => {
-  const server = await registerRoutes(app);
+// Middleware
+app.use(express.json());
+app.use(sessionMiddleware);
+app.use(passport.initialize());
+app.use(passport.session());
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+// Configure authentication
+configureReplitAuth(app);
 
-    res.status(status).json({ message });
-    throw err;
+// API routes
+app.use('/api', router);
+
+// Serve static assets in production
+if (isProduction) {
+  const clientPath = path.join(__dirname, '../../dist/public');
+  app.use(express.static(clientPath));
+  
+  // Handle SPA routing
+  app.get('*', (_, res) => {
+    res.sendFile(path.join(clientPath, 'index.html'));
   });
+}
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+// Start server
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
+  if (!isProduction) {
+    console.log('API: http://localhost:5000/api');
   }
+});
 
-})();
-
-// Export the configured app instance for Vercel
+// Export for Vercel
 export default app;
